@@ -28,8 +28,9 @@
         (if ready-sockets
             (progn (format t "reading..")
               (read-bytes-recursively stream response)
-              (format t "rsp: ~X~%" response))
-            "no-response"))
+              (format t "rsp: ~A~%" response)
+              response)
+            nil))
       )))
 
 (defconstant +mqtt-opcodes+
