@@ -182,5 +182,65 @@
 (mqtt-make-packet :connect :client-id "lispy")
  ; => (16 18 0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
 
+(defun plist-key (plist value)
+  (loop for (key val) on plist by #'cddr
+        when (equal val value)
+          return key))
+
+(defun decode-opcode (packet)
+  (plist-key +mqtt-opcodes+ (ash (first packet) -4)))
+
+(decode-opcode (list (mqtt-make-header-flags :connect)))
+ ; => :CONNECT
+(decode-opcode (list (mqtt-make-header-flags :connect-ack)))
+ ; => :CONNECT-ACK
+
+(defun extract-payload (packet)
+  (multiple-value-bind (len payload)
+      (decode-variable (cdr packet))
+
+    (if (not (equal len (length payload)))
+        (error "invalid length"))
+
+    payload))
+
+(mqtt-make-packet :connect :client-id "lispy")
+ ; => (16 18 0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
+(extract-payload (mqtt-make-packet :connect :client-id "lispy"))
+ ; => (0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
+
+(defgeneric mqtt-decode-packet (opcode payload)
+  (:documentation "De-serialize an MQTT packet into a MQTT packet object"))
+
+(defmethod mqtt-decode-packet ((opcode (eql :connect-ack)) payload)
+  ;; TODO use CLOS instead of crappy plists
+  ;; TODO properly decode properties
+  (let ((session-present (logbitp 0 (car payload)))
+        (reason-code (nth 1 payload))
+        (properties (subseq payload 2)))
+    (list opcode
+          :session-present session-present
+          :reason-code reason-code
+          :properties properties)))
+
+(defun mqtt-parse-packet (packet)
+  (let* ((packet (coerce packet 'list))
+         (opcode (decode-opcode packet))
+         (payload (extract-payload packet)))
+    (mqtt-decode-packet opcode payload)))
+
+(mqtt-parse-packet '(32 9 0 0 6 34 0 10 33 0 20))
+ ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
+ ; (6 34 0 10 33 0 20))
+
 (send-tcp-packet "localhost" 1883 (mqtt-make-packet :connect :client-id "lispy"))
+; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
+;  => #(32 9 0 0 6 34 0 10 33 0 20)
+
+(mqtt-parse-packet
+ (send-tcp-packet "localhost" 1883
+                  (mqtt-make-packet :connect :client-id "lispy")))
+; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
+;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
+;  (6 34 0 10 33 0 20))
 
