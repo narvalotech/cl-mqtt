@@ -139,6 +139,15 @@
 (defgeneric mqtt-make-packet (opcode &rest params)
   (:documentation "Encode an MQTT packet based on its opcode and a param-list"))
 
+(defmethod mqtt-make-packet :around (opcode &rest params)
+  "Encodes the packet header and length. Returns a valid MQTT packet."
+  (declare (ignore params))
+  (let ((payload (call-next-method)))
+    (append
+     (list (mqtt-make-header-flags opcode))
+     (encode-variable (length payload))
+     payload)))
+
 (defun make-field (payload)
   ;; TODO: check lengths
   (append (make-be-uint 2 (length payload))
@@ -150,14 +159,6 @@
 
 (string->ascii "hello")
  ; => (104 101 108 108 111)
-
-(defmethod mqtt-make-packet :around (opcode &rest params)
-  (declare (ignore params))
-  (let ((payload (call-next-method)))
-    (append
-     (list (mqtt-make-header-flags opcode))
-     (encode-variable (length payload))
-     payload)))
 
 (defmethod mqtt-make-packet ((opcode (eql :connect)) &rest params)
   ;; TODO: add setting username/password
