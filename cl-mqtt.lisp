@@ -79,22 +79,27 @@
 
 (defun decode-variable (varint)
   "Decodes a variable-length integer (sequence of bytes) into a lisp integer"
-  (let ((result 0))
+  (let ((i 0)
+        (result 0))
     (loop for byte in varint
-          for i from 0
-          do (setf result (+ result (ash (logand byte #x7f) (* 7 i)))))
-    result))
+          do (progn
+               (setf result (+ result (ash (logand byte #x7f) (* 7 i))))
+               (incf i))
+          until (not (logbitp 7 byte)))
+    (values result (subseq varint i))))
 
 (decode-variable '(#x80 #x01))
- ; => 128 (8 bits, #x80, #o200, #b10000000)
+ ; => 128, NIL
 (decode-variable '(#xFF #x7F))
- ; => 16383 (14 bits, #x3FFF)
+ ; => 16383, NIL
 (decode-variable '(#x80 #x80 #x1))
- ; => 16384 (15 bits, #x4000)
+ ; => 16384, NIL
 (decode-variable '(#xFF #xFF #x7F))
- ; => 2097151 (21 bits, #x1FFFFF)
+ ; => 2097151, NIL
 (decode-variable '(#x80 #x80 #x80 #x1))
- ; => 2097152 (22 bits, #x200000)
+ ; => 2097152, NIL
+(decode-variable '(#x80 #x80 #x80 #x1 #x2 #x3 #x4))
+ ; => 2097152, (2 3 4)
 
 (defun mqtt-make-packet (opcode payload)
   (append
