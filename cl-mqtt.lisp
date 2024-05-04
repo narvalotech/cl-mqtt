@@ -37,7 +37,9 @@
 
 (defconstant +mqtt-opcodes+
   '(:connect 1
-    :connect-ack 2))
+    :connect-ack 2
+    :publish 3
+    :publish-ack 4))
 
 (defun mqtt-make-header-flags (opcode)
   (list (ash (getf +mqtt-opcodes+ opcode) 4)))
@@ -177,6 +179,24 @@
 
 (mqtt-make-packet :connect :client-id "lispy")
  ; => (16 18 0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
+
+(defmethod mqtt-make-packet ((opcode (eql :publish)) &rest params)
+  ;; TODO: utf-8 support
+  ;; TODO: support strings in payload
+  (let ((topic (string->ascii (getf params :topic)))
+        ;; no packet id on QoS level 0
+        (packet-id nil)
+        ;; no support for properties yet
+        (properties nil)
+        (payload (getf params :payload)))
+
+    (append topic
+            packet-id
+            properties
+            payload)))
+
+(mqtt-make-packet :publish :topic "hello/mytopic" :payload '(1 2 3 4))
+ ; => (48 17 104 101 108 108 111 47 109 121 116 111 112 105 99 1 2 3 4)
 
 (defun plist-key (plist value)
   (loop for (key val) on plist by #'cddr
