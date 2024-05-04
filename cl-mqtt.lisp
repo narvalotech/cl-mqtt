@@ -1,5 +1,7 @@
 (ql:quickload "usocket")
 
+(declaim (optimize (debug 3)))
+
 (defun read-bytes-recursively (stream response)
   (when (listen stream)
     (let ((byte (read-byte stream nil)))
