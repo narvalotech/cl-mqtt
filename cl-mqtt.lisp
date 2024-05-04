@@ -38,10 +38,10 @@
     :connect-ack 2))
 
 (defun mqtt-make-header-flags (opcode)
-  (ash (getf +mqtt-opcodes+ opcode) 4))
+  (list (ash (getf +mqtt-opcodes+ opcode) 4)))
 
 (mqtt-make-header-flags :connect)
- ; => 16 (5 bits, #x10, #o20, #b10000)
+ ; => (16)
 
 (defun encode-variable (int)
   "Encodes an integer into the MQTT variable-intgth format"
@@ -102,12 +102,6 @@
 (decode-variable '(#x80 #x80 #x80 #x1 #x2 #x3 #x4))
  ; => 2097152, (2 3 4)
 
-(defun mqtt-make-packet (opcode payload)
-  (append
-   (list (mqtt-make-header-flags opcode))
-   (encode-variable (length payload))
-   payload))
-
 (defun make-le-range (max)
   (loop for number from 0 to (- max 1) collect number))
 
@@ -144,7 +138,7 @@
   (declare (ignore params))
   (let ((payload (call-next-method)))
     (append
-     (list (mqtt-make-header-flags opcode))
+     (mqtt-make-header-flags opcode)
      (encode-variable (length payload))
      payload)))
 
@@ -190,9 +184,9 @@
 (defun decode-opcode (packet)
   (plist-key +mqtt-opcodes+ (ash (first packet) -4)))
 
-(decode-opcode (list (mqtt-make-header-flags :connect)))
+(decode-opcode (mqtt-make-header-flags :connect))
  ; => :CONNECT
-(decode-opcode (list (mqtt-make-header-flags :connect-ack)))
+(decode-opcode (mqtt-make-header-flags :connect-ack))
  ; => :CONNECT-ACK
 
 (defun extract-payload (packet)
