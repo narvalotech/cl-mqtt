@@ -14,7 +14,7 @@
         (vector-push-extend byte response)
         (read-bytes-recursively stream response)))))
 
-(defun send-packet (socket stream data)
+(defun send-packet (socket stream data &key (wait-response nil))
   ;; Send a binary packet over a TCP stream/socket and receive its response
   (let ((bytes (make-array (length data)
                            :element-type '(unsigned-byte 8)
@@ -29,15 +29,16 @@
     (write-sequence bytes stream)
     (finish-output stream)
 
-    ;; Read the response
-    (multiple-value-bind (ready-sockets)
-        (usocket:wait-for-input (list socket) :timeout 5)
-      (if ready-sockets
-          (progn (format t "reading..")
-                 (read-bytes-recursively stream response)
-                 (format t "rsp: ~A~%" response)
-                 response)
-          nil))))
+    (if wait-response
+        ;; Read the response
+        (multiple-value-bind (ready-sockets)
+            (usocket:wait-for-input (list socket) :timeout 5)
+          (if ready-sockets
+              (progn (format t "reading..")
+                     (read-bytes-recursively stream response)
+                     (format t "rsp: ~A~%" response)
+                     response)
+              nil)))))
 
 (defconstant +mqtt-opcodes+
   '(:connect 1
@@ -258,14 +259,16 @@
  ; (6 34 0 10 33 0 20))
 
 (mqtt-with-broker ("localhost" 1883 socket stream)
-  (send-packet socket stream (mqtt-make-packet :connect :client-id "lispy")))
+  (send-packet socket stream (mqtt-make-packet :connect :client-id "lispy")
+               :wait-response t))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => #(32 9 0 0 6 34 0 10 33 0 20)
 
 (mqtt-with-broker ("localhost" 1883 socket stream)
   (mqtt-parse-packet
    (send-packet socket stream
-                (mqtt-make-packet :connect :client-id "lispy"))))
+                (mqtt-make-packet :connect :client-id "lispy")
+                :wait-response t)))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
 ;  (6 34 0 10 33 0 20))
@@ -274,11 +277,14 @@
   ;; Connect
   (mqtt-parse-packet
    (send-packet socket stream
-                (mqtt-make-packet :connect :client-id "lispy")))
+                (mqtt-make-packet :connect :client-id "lispy")
+                :wait-response t))
 
   ;; Send some dummy data
-  (mqtt-parse-packet
-   (send-packet socket stream
-                (mqtt-make-packet :publish
-                                  :topic "hello/mytopic"
-                                  :payload (string->ascii "pretend-this-is-json")))))
+  ;; Since QoS is 0, we won't get a response
+  (send-packet socket stream
+               (mqtt-make-packet :publish
+                                 :topic "hello/mytopic"
+                                 :payload (string->ascii "pretend-this-is-json"))))
+; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
+;  => NIL
