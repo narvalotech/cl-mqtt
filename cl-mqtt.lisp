@@ -246,6 +246,8 @@
           :properties properties)))
 
 (defun mqtt-parse-packet (packet)
+  (if (equal (length packet) 0)
+      (error "Empty packet"))
   (let* ((packet (coerce packet 'list))
          (opcode (decode-opcode packet))
          (payload (extract-payload packet)))
