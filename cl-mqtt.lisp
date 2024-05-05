@@ -194,13 +194,15 @@
         (properties nil)
         (payload (getf params :payload)))
 
-    (append topic
+    (append (make-be-uint 2 (length topic))
+            topic
             packet-id
+            (make-be-uint 1 (length properties))
             properties
             payload)))
 
 (mqtt-make-packet :publish :topic "hello/mytopic" :payload '(1 2 3 4))
- ; => (48 17 104 101 108 108 111 47 109 121 116 111 112 105 99 1 2 3 4)
+ ; => (48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4)
 
 (defun plist-key (plist value)
   (loop for (key val) on plist by #'cddr
