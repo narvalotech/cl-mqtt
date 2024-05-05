@@ -139,6 +139,17 @@
   (loop for pos in (make-be-range octets)
         collect (extract-byte number pos)))
 
+(defun decode-be-uint (bytes)
+  (loop for i from 0
+        for byte in (reverse bytes)
+        summing
+        (ash byte (* i 8))))
+
+(decode-be-uint '(1 12))
+ ; => 268 (9 bits, #x10C)
+(decode-be-uint '(2 1 12))
+ ; => 131340 (18 bits, #x2010C)
+
 (defgeneric mqtt-make-packet (opcode &rest params)
   (:documentation "Encode an MQTT packet based on its opcode and a param-list"))
 
@@ -162,6 +173,14 @@
 
 (string->ascii "hello")
  ; => (104 101 108 108 111)
+
+(defun ascii->string (ascii)
+  (coerce
+   (loop for char in ascii
+         collect (code-char char)) 'string))
+
+(ascii->string '(104 101 108 108 111))
+ ; => "hello"
 
 (defmethod mqtt-make-packet ((opcode (eql :connect)) &rest params)
   ;; TODO: add setting username/password
@@ -245,6 +264,29 @@
           :session-present session-present
           :reason-code reason-code
           :properties properties)))
+
+(defmethod mqtt-decode-packet ((opcode (eql :publish)) payload)
+  ;; TODO: make receiving QoS > 0 work
+  ;; TODO: more ergonomic decoding
+  (let* ((topic-length (decode-be-uint (subseq payload 0 2)))
+         (topic (ascii->string (subseq payload 2 (+ 2 topic-length))))
+         (packet-id nil)
+         (prop-len (car (subseq payload (+ 2 topic-length))))
+         (properties (if (zerop prop-len)
+                         nil
+                         (subseq payload (+ 2 1 topic-length) prop-len)))
+         (payload (subseq payload
+                          (+ 2 1 topic-length prop-len))))
+    (list opcode
+          :topic topic
+          :packet-id packet-id
+          :properties properties
+          :payload payload)))
+
+(mqtt-parse-packet
+ '(48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
+ ; => (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
+ ; (1 2 3 4))
 
 (defun mqtt-parse-packet (packet)
   (if (equal (length packet) 0)
