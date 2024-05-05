@@ -269,3 +269,16 @@
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
 ;  (6 34 0 10 33 0 20))
+
+(mqtt-with-broker ("localhost" 1883 socket stream)
+  ;; Connect
+  (mqtt-parse-packet
+   (send-packet socket stream
+                (mqtt-make-packet :connect :client-id "lispy")))
+
+  ;; Send some dummy data
+  (mqtt-parse-packet
+   (send-packet socket stream
+                (mqtt-make-packet :publish
+                                  :topic "hello/mytopic"
+                                  :payload (string->ascii "pretend-this-is-json")))))
