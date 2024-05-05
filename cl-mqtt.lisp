@@ -2,6 +2,11 @@
 
 (declaim (optimize (debug 3)))
 
+(defmacro mqtt-with-broker ((host port socket stream) &body body)
+  `(usocket:with-client-socket
+       (,socket ,stream ,host ,port :element-type '(unsigned-byte 8))
+     (progn ,@body)))
+
 (defun read-bytes-recursively (stream response)
   (when (listen stream)
     (let ((byte (read-byte stream nil)))
@@ -9,31 +14,30 @@
         (vector-push-extend byte response)
         (read-bytes-recursively stream response)))))
 
-(defun send-tcp-packet (host port data)
-  (usocket:with-client-socket (socket stream host port :element-type '(unsigned-byte 8))
-    (let ((bytes (make-array (length data)
-                             :element-type '(unsigned-byte 8)
-                             :initial-contents data))
+(defun send-packet (socket stream data)
+  ;; Send a binary packet over a TCP stream/socket and receive its response
+  (let ((bytes (make-array (length data)
+                           :element-type '(unsigned-byte 8)
+                           :initial-contents data))
 
-          (response (make-array 1024
-                                :adjustable t
-                                :fill-pointer 0
-                                :element-type '(unsigned-byte 8))))
+        (response (make-array 1024
+                              :adjustable t
+                              :fill-pointer 0
+                              :element-type '(unsigned-byte 8))))
 
-      ;; Send the command
-      (write-sequence bytes stream)
-      (finish-output stream)
+    ;; Send the command
+    (write-sequence bytes stream)
+    (finish-output stream)
 
-      ;; Read the response
-      (multiple-value-bind (ready-sockets)
-          (usocket:wait-for-input (list socket) :timeout 5)
-        (if ready-sockets
-            (progn (format t "reading..")
-              (read-bytes-recursively stream response)
-              (format t "rsp: ~A~%" response)
-              response)
-            nil))
-      )))
+    ;; Read the response
+    (multiple-value-bind (ready-sockets)
+        (usocket:wait-for-input (list socket) :timeout 5)
+      (if ready-sockets
+          (progn (format t "reading..")
+                 (read-bytes-recursively stream response)
+                 (format t "rsp: ~A~%" response)
+                 response)
+          nil))))
 
 (defconstant +mqtt-opcodes+
   '(:connect 1
@@ -249,14 +253,15 @@
  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
  ; (6 34 0 10 33 0 20))
 
-(send-tcp-packet "localhost" 1883 (mqtt-make-packet :connect :client-id "lispy"))
+(mqtt-with-broker ("localhost" 1883 socket stream)
+  (send-packet socket stream (mqtt-make-packet :connect :client-id "lispy")))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => #(32 9 0 0 6 34 0 10 33 0 20)
 
-(mqtt-parse-packet
- (send-tcp-packet "localhost" 1883
-                  (mqtt-make-packet :connect :client-id "lispy")))
+(mqtt-with-broker ("localhost" 1883 socket stream)
+  (mqtt-parse-packet
+   (send-packet socket stream
+                (mqtt-make-packet :connect :client-id "lispy"))))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
 ;  (6 34 0 10 33 0 20))
-
