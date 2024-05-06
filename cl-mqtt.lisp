@@ -76,7 +76,7 @@
  ; => "(FF FF 7F)"
 (format nil "~X" (encode-variable 2097152))
  ; => "(80 80 80 1)"
-(format nil "~X" (encode-variable 268435456))
+;; (format nil "~X" (encode-variable 268435456))
 ; -> should error out
 
 (defun cont-bit (byte)
@@ -288,11 +288,6 @@
           :properties properties
           :payload payload)))
 
-(mqtt-parse-packet
- '(48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
- ; => (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
- ; (1 2 3 4))
-
 (defun decode-qos (opcode packet)
   "Returns QoS level of packet"
   ;; TODO: properly support retransmission
@@ -313,6 +308,11 @@
 (mqtt-parse-packet '(32 9 0 0 6 34 0 10 33 0 20))
  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
  ; (6 34 0 10 33 0 20))
+
+(mqtt-parse-packet
+ '(48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
+ ; => (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
+ ; (1 2 3 4))
 
 (mqtt-with-broker ("localhost" 1883 socket stream)
   (send-packet socket stream (mqtt-make-packet :connect :client-id "lispy")
