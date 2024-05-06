@@ -251,32 +251,38 @@
 (extract-payload (mqtt-make-packet :connect :client-id "lispy"))
  ; => (0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
 
-(defgeneric mqtt-decode-packet (opcode payload)
+(defgeneric mqtt-decode-packet (opcode payload qos)
   (:documentation "De-serialize an MQTT packet into a MQTT packet object"))
 
-(defmethod mqtt-decode-packet ((opcode (eql :connect-ack)) payload)
+(defmacro pull (buffer amount)
+  "Pull `amount' elements out of the `buffer' list."
+  `(let ((bytes (subseq ,buffer 0 ,amount)))
+     (setf ,buffer (subseq ,buffer ,amount))
+     bytes))
+
+(defmethod mqtt-decode-packet ((opcode (eql :connect-ack)) payload qos)
   ;; TODO use CLOS instead of crappy plists
   ;; TODO properly decode properties
-  (let ((session-present (logbitp 0 (car payload)))
-        (reason-code (nth 1 payload))
-        (properties (subseq payload 2)))
+  (declare (ignore qos))
+  (let* ((session-present (logbitp 0 (car (pull payload 1))))
+         (reason-code (car (pull payload 1)))
+         (properties payload))
     (list opcode
           :session-present session-present
           :reason-code reason-code
           :properties properties)))
 
-(defmethod mqtt-decode-packet ((opcode (eql :publish)) payload)
-  ;; TODO: make receiving QoS > 0 work
-  ;; TODO: more ergonomic decoding
-  (let* ((topic-length (decode-be-uint (subseq payload 0 2)))
-         (topic (ascii->string (subseq payload 2 (+ 2 topic-length))))
-         (packet-id nil)
-         (prop-len (car (subseq payload (+ 2 topic-length))))
+(defmethod mqtt-decode-packet ((opcode (eql :publish)) payload qos)
+  (let* ((topic-length (decode-be-uint (pull payload 2)))
+         (topic (ascii->string (pull payload topic-length)))
+         (packet-id (if (zerop qos)
+                        nil
+                        (pull payload 1)))
+         (prop-len (car (pull payload 1)))
          (properties (if (zerop prop-len)
                          nil
-                         (subseq payload (+ 2 1 topic-length) prop-len)))
-         (payload (subseq payload
-                          (+ 2 1 topic-length prop-len))))
+                         (pull payload prop-len)))
+         (payload payload))
     (list opcode
           :topic topic
           :packet-id packet-id
@@ -288,13 +294,22 @@
  ; => (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
  ; (1 2 3 4))
 
+(defun decode-qos (opcode packet)
+  "Returns QoS level of packet"
+  ;; TODO: properly support retransmission
+  (if (equal opcode :publish)
+      (ash (logand #b0110 (first packet)) -1)
+      ;; We don't support QoS for any other packet
+      0))
+
 (defun mqtt-parse-packet (packet)
   (if (equal (length packet) 0)
       (error "Empty packet"))
   (let* ((packet (coerce packet 'list))
          (opcode (decode-opcode packet))
+         (qos (decode-qos opcode packet))
          (payload (extract-payload packet)))
-    (mqtt-decode-packet opcode payload)))
+    (mqtt-decode-packet opcode payload qos)))
 
 (mqtt-parse-packet '(32 9 0 0 6 34 0 10 33 0 20))
  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
