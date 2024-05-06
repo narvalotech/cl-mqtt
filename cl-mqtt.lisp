@@ -281,8 +281,7 @@
          (prop-len (car (pull payload 1)))
          (properties (if (zerop prop-len)
                          nil
-                         (pull payload prop-len)))
-         (payload payload))
+                         (pull payload prop-len))))
     (list opcode
           :topic topic
           :packet-id packet-id
