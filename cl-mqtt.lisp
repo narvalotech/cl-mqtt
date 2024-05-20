@@ -2,11 +2,6 @@
 
 (declaim (optimize (debug 3)))
 
-(defmacro mqtt-with-broker ((host port socket stream) &body body)
-  `(usocket:with-client-socket
-       (,socket ,stream ,host ,port :element-type '(unsigned-byte 8))
-     (progn ,@body)))
-
 (defun read-bytes-recursively (stream response)
   (when (listen stream)
     (let ((byte (read-byte stream nil)))
@@ -314,13 +309,19 @@
  ; => (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
  ; (1 2 3 4))
 
-(mqtt-with-broker ("localhost" 1883 socket stream)
+(defmacro mqtt-with-broker-socket ((host port socket stream) &body body)
+  "Execute BODY with an open socket to a MQTT broker"
+  `(usocket:with-client-socket
+       (,socket ,stream ,host ,port :element-type '(unsigned-byte 8))
+     (progn ,@body)))
+
+(mqtt-with-broker-socket ("localhost" 1883 socket stream)
   (send-packet socket stream (mqtt-make-packet :connect :client-id "lispy")
                :wait-response t))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => #(32 9 0 0 6 34 0 10 33 0 20)
 
-(mqtt-with-broker ("localhost" 1883 socket stream)
+(mqtt-with-broker-socket ("localhost" 1883 socket stream)
   (mqtt-parse-packet
    (send-packet socket stream
                 (mqtt-make-packet :connect :client-id "lispy")
@@ -329,13 +330,51 @@
 ;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
 ;  (6 34 0 10 33 0 20))
 
-(mqtt-with-broker ("localhost" 1883 socket stream)
+(defun mqtt-connect (broker &key (client-id "cl-mqtt-client"))
+  (let ((socket (getf broker :socket))
+        (stream (getf broker :stream)))
+
+    (mqtt-parse-packet
+     (send-packet socket stream
+                  (mqtt-make-packet :connect :client-id client-id)
+                  :wait-response t))))
+
+(defun make-broker (socket stream)
+  "Makes an MQTT broker (client-side) instance."
+  (list :socket socket :stream stream))
+
+(mqtt-with-broker-socket ("localhost" 1883 socket stream)
+  (mqtt-connect (make-broker socket stream) :client-id "new-client"))
+; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
+;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
+;  (6 34 0 10 33 0 20))
+
+(defmacro mqtt-with-broker ((host port broker) &body body)
+  "Execute BODY with an open connection to a MQTT broker"
+  `(usocket:with-client-socket
+       (socket stream ,host ,port :element-type '(unsigned-byte 8))
+     (let ((,broker (make-broker socket stream)))
+       (mqtt-connect ,broker :client-id "lispy")
+       ;; TODO: disconnect properly
+       (progn ,@body))))
+
+(mqtt-with-broker-socket ("localhost" 1883 socket stream)
   ;; Connect
   (mqtt-parse-packet
    (send-packet socket stream
                 (mqtt-make-packet :connect :client-id "lispy")
                 :wait-response t))
 
+  ;; Send some dummy data
+  ;; Since QoS is 0, we won't get a response
+  (send-packet socket stream
+               (mqtt-make-packet :publish
+                                 :topic "hello/mytopic"
+                                 :payload (string->ascii "pretend-this-is-json"))))
+; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
+;  => NIL
+
+(mqtt-with-broker ("localhost" 1883 broker)
   ;; Send some dummy data
   ;; Since QoS is 0, we won't get a response
   (send-packet socket stream
