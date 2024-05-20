@@ -383,3 +383,20 @@
                                  :payload (string->ascii "pretend-this-is-json"))))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => NIL
+
+(defun publish (broker topic payload)
+  "Publish PAYLOAD to TOPIC with QoS 0 (no response)"
+  (let ((socket (getf broker :socket))
+        (stream (getf broker :stream)))
+
+    ;; Publish payload
+    ;; Since QoS is 0, we won't get a response
+    (send-packet socket stream
+                 (mqtt-make-packet :publish
+                                   :topic topic
+                                   :payload (string->ascii payload)))))
+
+(mqtt-with-broker ("localhost" 1883 broker)
+  (publish broker "hello/mytopic" "pretend-this-is-json"))
+; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
+;  => NIL
