@@ -163,8 +163,7 @@
           payload))
 
 (defun string->ascii (input-string)
-  (loop for char across input-string
-        collect (char-code char)))
+  (map 'list #'char-code input-string))
 
 (string->ascii "hello")
  ; => (104 101 108 108 111)
