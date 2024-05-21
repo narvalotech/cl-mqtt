@@ -39,10 +39,16 @@
   '(:connect 1
     :connect-ack 2
     :publish 3
-    :publish-ack 4))
+    :publish-ack 4
+    :subscribe 8
+    :suback 9))
 
 (defun mqtt-make-header-flags (opcode)
-  (list (ash (getf +mqtt-opcodes+ opcode) 4)))
+  (let ((id (getf +mqtt-opcodes+ opcode)))
+    (list
+     (case opcode
+       (:subscribe (logior (ash id 4) #b0010))
+       (t (ash id 4))))))
 
 (mqtt-make-header-flags :connect)
  ; => (16)
@@ -217,6 +223,38 @@
 
 (mqtt-make-packet :publish :topic "hello/mytopic" :payload '(1 2 3 4))
  ; => (48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4)
+
+(defun topic->payload (topic)
+  "Only intended for use with topics->subscribe-payload"
+  (let ((payload (string->ascii topic)))
+    (append (make-be-uint 2 (length payload))
+            payload
+            ;; Force max QoS to 0
+            '(0))))
+
+(defun topics->subscribe-payload (topics)
+  (reduce #'append
+          (map 'list #'topic->payload topics)))
+
+(topics->subscribe-payload '("hello/world" "mytopic"))
+ ; => (0 11 104 101 108 108 111 47 119 111 114 108 100 0 0 7 109 121 116 111 112 105
+ ; 99 0)
+
+(defmethod mqtt-make-packet ((opcode (eql :subscribe)) &rest params)
+  (let (;; app has to pass-in the packet identifier
+        (packet-id (getf params :packet-id))
+        ;; no support for properties yet
+        (properties nil)
+        (topics (getf params :topics)))
+
+    (append (make-be-uint 2 packet-id)
+            (make-be-uint 1 (length properties))
+            properties
+            (topics->subscribe-payload topics))))
+
+(mqtt-make-packet :subscribe :packet-id 77 :topics '("my/long/topic" "test-topic"))
+ ; => (130 32 0 77 0 0 13 109 121 47 108 111 110 103 47 116 111 112 105 99 0 0 10 116
+ ; 101 115 116 45 116 111 112 105 99 0)
 
 (defun plist-key (plist value)
   (loop for (key val) on plist by #'cddr
@@ -399,3 +437,17 @@
   (publish broker "hello/mytopic" "pretend-this-is-json"))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => NIL
+
+(mqtt-with-broker ("localhost" 1883 broker)
+  (let ((socket (getf broker :socket))
+        (stream (getf broker :stream)))
+
+    (send-packet socket stream
+                 (mqtt-make-packet :subscribe
+                                   :packet-id 77
+                                   :topics '("my/long/topic" "test-topic"))
+                 :wait-response t)))
+; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
+; reading..rsp: #(144 5 0 77 0 0 0)
+;  => #(144 5 0 77 0 0 0)
+
