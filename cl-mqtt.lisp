@@ -451,3 +451,14 @@
 ; reading..rsp: #(144 5 0 77 0 0 0)
 ;  => #(144 5 0 77 0 0 0)
 
+(defun subscribe (broker topic)
+  "Subscribe to TOPIC with QoS 0"
+  (let ((socket (getf broker :socket))
+        (stream (getf broker :stream)))
+
+    ;; Subscribe to payload
+    (send-packet socket stream
+                 (mqtt-make-packet :subscribe
+                                   :packet-id 77
+                                   :topics (list topic)))))
+
