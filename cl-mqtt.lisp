@@ -4,36 +4,35 @@
 
 (defun read-bytes-recursively (stream response)
   (when (listen stream)
-    (let ((byte (read-byte stream nil)))
+    (let ((byte (read-byte stream)))
       (when byte
         (vector-push-extend byte response)
         (read-bytes-recursively stream response)))))
+
+(defun read-from-socket (socket stream)
+  (let ((response (make-array 1024
+                              :adjustable t
+                              :fill-pointer 0
+                              :element-type '(unsigned-byte 8))))
+    (multiple-value-bind (ready-sockets)
+        (usocket:wait-for-input (list socket) :timeout 5)
+      (if ready-sockets
+          (progn (read-bytes-recursively stream response)
+                 response)
+          nil))))
 
 (defun send-packet (socket stream data &key (wait-response nil))
   ;; Send a binary packet over a TCP stream/socket and receive its response
   (let ((bytes (make-array (length data)
                            :element-type '(unsigned-byte 8)
-                           :initial-contents data))
-
-        (response (make-array 1024
-                              :adjustable t
-                              :fill-pointer 0
-                              :element-type '(unsigned-byte 8))))
+                           :initial-contents data)))
 
     ;; Send the command
     (write-sequence bytes stream)
     (finish-output stream)
 
     (if wait-response
-        ;; Read the response
-        (multiple-value-bind (ready-sockets)
-            (usocket:wait-for-input (list socket) :timeout 5)
-          (if ready-sockets
-              (progn (format t "reading..")
-                     (read-bytes-recursively stream response)
-                     (format t "rsp: ~A~%" response)
-                     response)
-              nil)))))
+        (read-from-socket socket stream))))
 
 (defconstant +mqtt-opcodes+
   '(:connect 1
@@ -286,6 +285,11 @@
 (defgeneric mqtt-decode-packet (opcode payload qos)
   (:documentation "De-serialize an MQTT packet into a MQTT packet object"))
 
+(defmethod mqtt-decode-packet ((opcode t) payload qos)
+  (list opcode
+        :payload payload
+        :qos qos))
+
 (defmacro pull (buffer amount)
   "Pull `amount' elements out of the `buffer' list."
   `(let ((bytes (subseq ,buffer 0 ,amount)))
@@ -462,3 +466,33 @@
                                    :packet-id 77
                                    :topics (list topic)))))
 
+;; TODO:
+;; - Try to match outstanding packets (maybe with queue?)
+;; - Send ping packets so connection isn't closed due to timeout
+
+(defun mqtt-process-packet (packet)
+  ;; For now, we just parse it to stdout
+  (if (> (length packet) 0)
+      (format t "Got packet: ~A~%" (mqtt-parse-packet packet))))
+
+(defparameter *broker* nil)
+
+(defun stream-is-connected-p (stream)
+  (not (equal (slot-value stream 'listen) :EOF)))
+
+(mqtt-with-broker ("localhost" 1883 broker)
+  (let ((socket (getf broker :socket))
+        (stream (getf broker :stream)))
+
+    ;; TODO: unset this when shtf
+    (setf *broker* broker)
+
+    (loop while (stream-is-connected-p stream) do
+      (progn
+        (mqtt-process-packet
+         (read-from-socket socket stream)))))
+  (format t "Exited receive loop"))
+
+;; Run this from another thread
+(subscribe *broker* "test/topic")
+(publish *broker* "test/topic" "important data")
