@@ -552,25 +552,31 @@
           (ping broker)
           (sleep 5))))
 
-(mqtt-with-broker ("localhost" 1883 broker)
-  (let ((socket (getf broker :socket))
-        (stream (getf broker :stream))
-        (ping-thread))
-    (format t "Connected. Entering receive loop.~%")
+(defun mqtt-connect-to-broker (address port callback)
+  "Open a connection to a broker, and call CALLBACK when data is received."
+  (declare (type (function (t t) t) callback))
 
-    (setf *broker* broker)
+  (mqtt-with-broker (address port broker)
+    (let ((socket (getf broker :socket))
+          (stream (getf broker :stream))
+          (ping-thread))
+      (format t "Connected. Entering receive loop.~%")
 
-    (setf ping-thread (bt:make-thread
-                       (lambda () (ping-thread-entrypoint broker))
-                       :name "MQTT keepalive thread"))
+      (setf ping-thread (bt:make-thread
+                         (lambda () (ping-thread-entrypoint broker))
+                         :name "MQTT keepalive thread"))
 
-    (loop while (broker-connected-p broker) do
-      (progn
-        (mqtt-process-packet
-         (read-from-socket socket stream))))
+      (loop while (broker-connected-p broker) do
+        (funcall callback broker (read-from-socket socket stream)))
 
-    (bt:join-thread ping-thread))
-  (format t "Exited receive loop.~%"))
+      (bt:join-thread ping-thread))
+    (format t "Exited receive loop.~%")))
+
+(defun app-callback (broker data)
+  (setf *broker* broker)
+  (mqtt-process-packet data))
+
+(mqtt-connect-to-broker "localhost" 1883 #'app-callback)
 
 ;; Run this from another thread
 (subscribe *broker* "test/topic")
