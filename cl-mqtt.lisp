@@ -546,28 +546,31 @@
     (send-packet socket stream
                  (mqtt-make-packet :disconnect :reason-code #x00))))
 
-(defun ping-thread-entrypoint ()
-  (loop while (broker-connected-p *broker*) do
+(defun ping-thread-entrypoint (broker)
+  (loop while (broker-connected-p broker) do
         (progn
-          (ping *broker*)
+          (ping broker)
           (sleep 5))))
 
 (mqtt-with-broker ("localhost" 1883 broker)
   (let ((socket (getf broker :socket))
         (stream (getf broker :stream))
         (ping-thread))
+    (format t "Connected. Entering receive loop.~%")
 
     (setf *broker* broker)
 
-    (setf ping-thread (bt:make-thread #'ping-thread-entrypoint :name "MQTT keepalive thread"))
+    (setf ping-thread (bt:make-thread
+                       (lambda () (ping-thread-entrypoint broker))
+                       :name "MQTT keepalive thread"))
 
-    (loop while (stream-connected-p stream) do
+    (loop while (broker-connected-p broker) do
       (progn
         (mqtt-process-packet
          (read-from-socket socket stream))))
 
     (bt:join-thread ping-thread))
-  (format t "Exited receive loop~%"))
+  (format t "Exited receive loop.~%"))
 
 ;; Run this from another thread
 (subscribe *broker* "test/topic")
