@@ -556,7 +556,6 @@
         (stream (getf broker :stream))
         (ping-thread))
 
-    ;; TODO: unset this when shtf
     (setf *broker* broker)
 
     (setf ping-thread (bt:make-thread #'ping-thread-entrypoint :name "MQTT keepalive thread"))
