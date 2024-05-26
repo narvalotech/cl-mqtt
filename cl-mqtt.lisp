@@ -1,4 +1,5 @@
 (ql:quickload "usocket")
+(ql:quickload "bordeaux-threads")
 
 (declaim (optimize (debug 3)))
 
@@ -40,7 +41,10 @@
     :publish 3
     :publish-ack 4
     :subscribe 8
-    :suback 9))
+    :suback 9
+    :pingreq 12
+    :pingrsp 13
+    :disconnect 14))
 
 (defun mqtt-make-header-flags (opcode)
   (let ((id (getf +mqtt-opcodes+ opcode)))
@@ -255,6 +259,35 @@
  ; => (130 32 0 77 0 0 13 109 121 47 108 111 110 103 47 116 111 112 105 99 0 0 10 116
  ; 101 115 116 45 116 111 112 105 99 0)
 
+(defmethod mqtt-make-packet ((opcode (eql :pingreq)) &rest params)
+    '())
+
+(mqtt-make-packet :pingreq)
+ ; => (192 0)
+
+(defmethod mqtt-make-packet ((opcode (eql :disconnect)) &rest params)
+  (let ((reason-code (getf params :reason-code))
+        ;; no support for properties yet
+        (properties nil))
+
+    (append (make-be-uint 1 reason-code)
+            (make-be-uint 1 (length properties)))))
+
+;; #x00 - normal disconnection
+;; #x04 - disconnect with will
+;; #x81 - malformed packet
+;; #x82 - protocol error
+;; #x8d - keep-alive timeout
+;; #x8e - session taken over
+;; #x93 - receive maximum exceeded
+;; #x94 - topic alias invalid
+;; #x95 - packet too large
+;; #x98 - administrative action
+;; #x9c - use another server
+;; #x9d - server moved
+(mqtt-make-packet :disconnect :reason-code #x00)
+ ; => (224 2 0 0)
+
 (defun plist-key (plist value)
   (loop for (key val) on plist by #'cddr
         when (equal val value)
@@ -324,6 +357,17 @@
           :properties properties
           :payload payload)))
 
+(defmethod mqtt-decode-packet ((opcode (eql :pingrsp)) payload qos)
+  (list opcode))
+
+(defmethod mqtt-decode-packet ((opcode (eql :disconnect)) payload qos)
+  (let ((reason-code (decode-be-uint (pull payload 1))))
+    (list opcode
+          :reason-code reason-code)))
+
+(mqtt-decode-packet :disconnect '(#x04 00) 0)
+ ; => (:DISCONNECT :REASON-CODE 4)
+
 (defun decode-qos (opcode packet)
   "Returns QoS level of packet"
   ;; TODO: properly support retransmission
@@ -340,6 +384,9 @@
          (qos (decode-qos opcode packet))
          (payload (extract-payload packet)))
     (mqtt-decode-packet opcode payload qos)))
+
+(mqtt-parse-packet '(#xd0 0))
+ ; => (NIL :PAYLOAD NIL :QOS 0)
 
 (mqtt-parse-packet '(32 9 0 0 6 34 0 10 33 0 20))
  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
@@ -396,7 +443,6 @@
        (socket stream ,host ,port :element-type '(unsigned-byte 8))
      (let ((,broker (make-broker socket stream)))
        (mqtt-connect ,broker :client-id "lispy")
-       ;; TODO: disconnect properly
        (progn ,@body))))
 
 (mqtt-with-broker-socket ("localhost" 1883 socket stream)
@@ -468,31 +514,62 @@
 
 ;; TODO:
 ;; - Try to match outstanding packets (maybe with queue?)
-;; - Send ping packets so connection isn't closed due to timeout
 
 (defun mqtt-process-packet (packet)
   ;; For now, we just parse it to stdout
   (if (> (length packet) 0)
-      (format t "Got packet: ~A~%" (mqtt-parse-packet packet))))
+      (let ((parsed (mqtt-parse-packet packet)))
+        (if (> (length packet) 0)
+            (case (first parsed)
+              (:pingrsp nil)
+              (t (format t "Got packet: ~A~%" parsed)))))))
 
 (defparameter *broker* nil)
 
 (defun stream-connected-p (stream)
   (not (equal (slot-value stream 'listen) :EOF)))
 
-(mqtt-with-broker ("localhost" 1883 broker)
+(defun broker-connected-p (broker)
+  (stream-connected-p (getf broker :stream)))
+
+(defun ping (broker)
   (let ((socket (getf broker :socket))
         (stream (getf broker :stream)))
+
+    (send-packet socket stream (mqtt-make-packet :pingreq))))
+
+(defun disconnect (broker)
+  (let ((socket (getf broker :socket))
+        (stream (getf broker :stream)))
+
+    (send-packet socket stream
+                 (mqtt-make-packet :disconnect :reason-code #x00))))
+
+(defun ping-thread-entrypoint ()
+  (loop while (broker-connected-p *broker*) do
+        (progn
+          (ping *broker*)
+          (sleep 5))))
+
+(mqtt-with-broker ("localhost" 1883 broker)
+  (let ((socket (getf broker :socket))
+        (stream (getf broker :stream))
+        (ping-thread))
 
     ;; TODO: unset this when shtf
     (setf *broker* broker)
 
+    (setf ping-thread (bt:make-thread #'ping-thread-entrypoint :name "MQTT keepalive thread"))
+
     (loop while (stream-connected-p stream) do
       (progn
         (mqtt-process-packet
-         (read-from-socket socket stream)))))
-  (format t "Exited receive loop"))
+         (read-from-socket socket stream))))
+
+    (bt:join-thread ping-thread))
+  (format t "Exited receive loop~%"))
 
 ;; Run this from another thread
 (subscribe *broker* "test/topic")
 (publish *broker* "test/topic" "important data")
+(disconnect *broker*)
