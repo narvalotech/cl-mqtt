@@ -477,7 +477,7 @@
 
 (defparameter *broker* nil)
 
-(defun stream-is-connected-p (stream)
+(defun stream-connected-p (stream)
   (not (equal (slot-value stream 'listen) :EOF)))
 
 (mqtt-with-broker ("localhost" 1883 broker)
@@ -487,7 +487,7 @@
     ;; TODO: unset this when shtf
     (setf *broker* broker)
 
-    (loop while (stream-is-connected-p stream) do
+    (loop while (stream-connected-p stream) do
       (progn
         (mqtt-process-packet
          (read-from-socket socket stream)))))
