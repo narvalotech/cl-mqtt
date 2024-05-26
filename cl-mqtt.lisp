@@ -260,7 +260,8 @@
  ; 101 115 116 45 116 111 112 105 99 0)
 
 (defmethod mqtt-make-packet ((opcode (eql :pingreq)) &rest params)
-    '())
+  (declare (ignore params))
+  '())
 
 (mqtt-make-packet :pingreq)
  ; => (192 0)
