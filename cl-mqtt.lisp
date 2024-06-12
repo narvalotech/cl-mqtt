@@ -489,6 +489,28 @@
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => NIL
 
+(defmacro with-fn-shadow ((orig new) &body body)
+  `(let ((orig-backup))                 ; TODO: use gensym
+     (if (fboundp ,orig)
+         (progn
+           (setf orig-backup (symbol-function ,orig))
+           (setf (symbol-function ,orig) ,new)
+           (unwind-protect (progn ,@body)
+             (setf (symbol-function ,orig) orig-backup)))
+         (error "Function ~A is not defined" ,orig))))
+
+(defun fake-publish (broker topic payload)
+  (format t "Publishing:~% [broker] ~A~% [topic] ~A~% [payload] ~A~%"
+          broker topic payload))
+
+(with-fn-shadow ('publish #'fake-publish)
+  (publish nil "hello/mytopic" "pretend-this-is-json"))
+; Publishing:
+;  [broker] NIL
+;  [topic] hello/mytopic
+;  [payload] pretend-this-is-json
+;  => NIL
+
 (mqtt-with-broker ("localhost" 1883 broker)
   (let ((socket (getf broker :socket))
         (stream (getf broker :stream)))
