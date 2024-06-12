@@ -3,4 +3,5 @@
 *.log
 tmp/
 
-home.lisp
+_*.lisp
+_*.py
