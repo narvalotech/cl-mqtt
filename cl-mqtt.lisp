@@ -499,6 +499,16 @@
              (setf (symbol-function ,orig) orig-backup)))
          (error "Function ~A is not defined" ,orig))))
 
+(defmacro with-var-shadow ((orig new) &body body)
+  `(let ((orig-backup))                 ; TODO: use gensym
+     (if (boundp ,orig)
+         (progn
+           (setf orig-backup (symbol-value ,orig))
+           (setf (symbol-value ,orig) ,new)
+           (unwind-protect (progn ,@body)
+             (setf (symbol-value ,orig) orig-backup)))
+         (error "Variable ~A is not defined" ,orig))))
+
 (defun fake-publish (broker topic payload)
   (format t "Publishing:~% [broker] ~A~% [topic] ~A~% [payload] ~A~%"
           broker topic payload))
