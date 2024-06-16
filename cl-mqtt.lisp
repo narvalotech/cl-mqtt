@@ -475,14 +475,20 @@
 (defun publish (broker topic payload)
   "Publish PAYLOAD to TOPIC with QoS 0 (no response)"
   (let ((socket (getf broker :socket))
-        (stream (getf broker :stream)))
+        (stream (getf broker :stream))
+        (encoded-payload))
+
+    (setf encoded-payload
+          (if (stringp payload)
+              (string->ascii payload) ; encode if string
+              payload))               ; else use the list of bytes given
 
     ;; Publish payload
     ;; Since QoS is 0, we won't get a response
     (send-packet socket stream
                  (mqtt-make-packet :publish
                                    :topic topic
-                                   :payload (string->ascii payload)))))
+                                   :payload encoded-payload))))
 
 (mqtt-with-broker ("localhost" 1883 broker)
   (publish broker "hello/mytopic" "pretend-this-is-json"))
