@@ -100,7 +100,7 @@
                (setf result (+ result (ash (logand byte #x7f) (* 7 i))))
                (incf i))
           until (not (logbitp 7 byte)))
-    (values result (subseq varint i))))
+    (values result i)))
 
 (decode-variable '(#x80 #x01))
  ; => 128, NIL
@@ -303,13 +303,14 @@
  ; => :CONNECT-ACK
 
 (defun extract-payload (packet)
-  (multiple-value-bind (len payload)
+  (multiple-value-bind (len offset)
       (decode-variable (cdr packet))
+    (let ((payload (subseq (cdr packet) offset)))
 
-    (if (not (equal len (length payload)))
-        (error "invalid length"))
+      (if (> len (length payload))
+          (error "invalid length"))
 
-    payload))
+      payload)))
 
 (mqtt-make-packet :connect :client-id "lispy")
  ; => (16 18 0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
@@ -379,7 +380,7 @@
 
 (defun mqtt-parse-packet (packet)
   (if (equal (length packet) 0)
-      (error "Empty packet"))
+      (return-from mqtt-parse-packet nil))
   (let* ((packet (coerce packet 'list))
          (opcode (decode-opcode packet))
          (qos (decode-qos opcode packet))
@@ -397,6 +398,32 @@
  '(48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
  ; => (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
  ; (1 2 3 4))
+
+(defun mqtt-next-packet (packets)
+  (multiple-value-bind (len offset)
+      (decode-variable (cdr packets))
+    (+ 1 len offset)))
+
+(mqtt-next-packet '(32 9 0 0 6 34 0 10 33 0 20 32 9 0 0 6 34 0 10 33 0 20))
+ ; => 11 (4 bits, #xB, #o13, #b1011)
+
+(defun mqtt-parse-packets (packets)
+  "Parse a stream of packets into a list of MQTT packet objects"
+  (let ((next (mqtt-next-packet packets)))
+    (if (>= (length packets) next)
+        (append
+         (list (mqtt-parse-packet (subseq packets 0 next)))
+         (parse-packet (subseq packets next)))
+        nil)))
+
+(mqtt-parse-packets '(32 9 0 0 6 34 0 10 33 0 20))
+ ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
+ ;  (6 34 0 10 33 0 20)))
+(mqtt-parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
+ ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
+ ;  (6 34 0 10 33 0 20))
+ ; (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
+ ;  (1 2 3 4)))
 
 (defmacro mqtt-with-broker-socket ((host port socket stream) &body body)
   "Execute BODY with an open socket to a MQTT broker"
