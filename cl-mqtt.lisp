@@ -631,6 +631,9 @@
                          (lambda () (ping-thread-entrypoint broker))
                          :name "MQTT keepalive thread"))
 
+      ;; subscribe to all topics
+      (subscribe broker "#")
+
       (loop while (broker-connected-p broker) do
         (funcall callback broker (read-from-socket socket stream)))
 
