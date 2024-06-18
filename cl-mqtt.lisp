@@ -647,13 +647,11 @@
       (bt:join-thread ping-thread))
     (format t "Exited receive loop.~%")))
 
-(defun app-callback (broker data)
+(defun test-app-callback (broker data)
   (setf *broker* broker)
   (mqtt-process-packet data))
 
-(mqtt-connect-to-broker "localhost" 1883 #'app-callback)
-
-;; Run this from another thread
+(mqtt-connect-to-broker "localhost" 1883 #'test-app-callback)
 (subscribe *broker* "test/topic")
 (publish *broker* "test/topic" "important data")
 (disconnect *broker*)
