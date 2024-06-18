@@ -638,8 +638,17 @@
                          (lambda () (ping-thread-entrypoint broker))
                          :name "MQTT keepalive thread"))
 
-      ;; subscribe to all topics
-      (subscribe broker "#")
+      ;; FIXME: this is broken in the real world
+      ;; - conn to a mosquitto instance over wifi
+      ;; - z2m sends a big JSON DoS packet (z2m/bridge/info)
+      ;; - data gets lost along the way
+      ;; - CL-MQTT gets confused
+      ;;
+      ;; Don't know who the culprit is, but parsing the long packet
+      ;; (when copy-pasted from wireshark) works..
+      ;;
+      ;; ;; subscribe to all topics
+      ;; (subscribe broker "#")
 
       (loop while (broker-connected-p broker) do
         (funcall callback broker (read-from-socket socket stream)))
@@ -652,6 +661,6 @@
   (mqtt-process-packet data))
 
 (mqtt-connect-to-broker "localhost" 1883 #'test-app-callback)
-(subscribe *broker* "test/topic")
+(subscribe *broker* "#")
 (publish *broker* "test/topic" "important data")
 (disconnect *broker*)
