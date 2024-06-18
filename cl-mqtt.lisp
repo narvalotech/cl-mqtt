@@ -594,7 +594,7 @@
         (if (> (length packet) 0)
             (case (first parsed)
               (:pingrsp nil)
-              (t (format t "Got packet: ~A~%" parsed)))))))
+              (t (format t "Got packet: ~X~%" parsed)))))))
 
 (defparameter *broker* nil)
 
