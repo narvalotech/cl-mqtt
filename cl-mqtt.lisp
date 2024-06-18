@@ -413,7 +413,7 @@
     (if (>= (length packets) next)
         (append
          (list (mqtt-parse-packet (subseq packets 0 next)))
-         (parse-packet (subseq packets next)))
+         (mqtt-parse-packets (subseq packets next)))
         nil)))
 
 (mqtt-parse-packets '(32 9 0 0 6 34 0 10 33 0 20))
