@@ -599,7 +599,8 @@
 (defparameter *broker* nil)
 
 (defun stream-connected-p (stream)
-  (not (equal (slot-value stream 'listen) :EOF)))
+  (and (not (equal (slot-value stream 'listen) :EOF))
+       (not (equal (sb-sys:fd-stream-fd stream) -1))))
 
 (defun broker-connected-p (broker)
   (stream-connected-p (getf broker :stream)))
