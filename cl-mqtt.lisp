@@ -424,6 +424,12 @@
  ;  (6 34 0 10 33 0 20))
  ; (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
  ;  (1 2 3 4)))
+(mqtt-parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4 144 5 0 77 0 0 0))
+ ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
+ ;  (6 34 0 10 33 0 20))
+ ; (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
+ ;  (1 2 3 4))
+ ; (:SUBACK :PAYLOAD (0 77 0 0 0) :QOS 0))
 
 (defmacro mqtt-with-broker-socket ((host port socket stream) &body body)
   "Execute BODY with an open socket to a MQTT broker"
