@@ -191,7 +191,7 @@
         (proto-version '(5))
         (connect-flags '(#b00000010))
         ;; in seconds
-        (keep-alive (make-be-uint 2 5))
+        (keep-alive (make-be-uint 2 60))
         ;; no properties
         (properties '(0))
         ;; only client ID, no user/pass
