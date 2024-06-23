@@ -660,7 +660,7 @@
   (setf *broker* broker)
   (mqtt-process-packet data))
 
-(mqtt-connect-to-broker "localhost" 1883 #'test-app-callback)
-(subscribe *broker* "#")
-(publish *broker* "test/topic" "important data")
-(disconnect *broker*)
+;; (mqtt-connect-to-broker "localhost" 1883 #'test-app-callback)
+;; (subscribe *broker* "#")
+;; (publish *broker* "test/topic" "important data")
+;; (disconnect *broker*)
