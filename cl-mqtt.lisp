@@ -3,24 +3,74 @@
 
 (declaim (optimize (debug 3)))
 
-(defun read-bytes-recursively (stream response)
-  (when (listen stream)
-    (let ((byte (read-byte stream)))
-      (when byte
-        (vector-push-extend byte response)
-        (read-bytes-recursively stream response)))))
+(defun last-element (vector)
+  (elt vector (1- (length vector))))
+
+(last-element #(0 1 2 3))
+
+(defun packet-length-incomplete? (array)
+  "Returns T when not enough bytes to decode packet length."
+  (logbitp 7 (last-element array)))
+
+(packet-length-incomplete? #(#x80))
+ ; => T
+(packet-length-incomplete? #(#x80 #x80 #x01))
+ ; => NIL
+
+(defun missing-bytes (array)
+  "Returns the number of bytes array is missing to make a valid MQTT packet."
+  (multiple-value-bind (packet-len offset)
+      (decode-variable (coerce array 'list))
+    (- (+ offset packet-len) (length array))))
+
+(defun next-rx-size (array)
+  "Returns the number of bytes necessary for a full packet."
+  (cond
+    ;; We need the opcode
+    ((equal (length array) 0) 1)
+
+    ;; We got the opcode, need (the first byte of the) packet size now
+    ((equal (length array) 1) 1)
+
+    ;; We got (parts) of the encoded packet length. We might need more.
+    ((packet-length-incomplete? (subseq array 1)) 1)
+
+    ;; We know the length, attempt to receive the payload.
+    (t (missing-bytes (subseq array 1)))))
+
+(next-rx-size #(144))
+ ; => 1 (1 bit, #x1, #o1, #b1)
+(next-rx-size #(144 5))
+ ; => 5 (3 bits, #x5, #o5, #b101)
+(next-rx-size #(144 5 0 77 0 0))
+ ; => 1 (1 bit, #x1, #o1, #b1)
+(next-rx-size #(144 5 0 77 0 0 0))
+ ; => 0 (0 bits, #x0, #o0, #b0)
+
+(defun stream-connected-p (stream)
+  (and (not (equal (slot-value stream 'listen) :EOF))
+       (not (equal (sb-sys:fd-stream-fd stream) -1))))
+
+(defun read-bytes (stream packet num-bytes)
+  "Phind made this (with some nudging)"
+  (let ((temp-buffer (make-array num-bytes :element-type '(unsigned-byte 8))))
+    (let ((read-count (read-sequence temp-buffer stream)))
+      (dotimes (i read-count)
+        (vector-push-extend (elt temp-buffer i) packet))
+      packet)))
 
 (defun read-from-socket (socket stream)
-  (let ((response (make-array 1024
-                              :adjustable t
-                              :fill-pointer 0
-                              :element-type '(unsigned-byte 8))))
-    (multiple-value-bind (ready-sockets)
-        (usocket:wait-for-input (list socket) :timeout 5)
-      (if ready-sockets
-          (progn (read-bytes-recursively stream response)
-                 response)
-          nil))))
+  (declare (ignore socket))             ; TODO: update API
+  (let ((packet (make-array 1024
+                            :adjustable t
+                            :fill-pointer 0
+                            :element-type '(unsigned-byte 8))))
+
+    (loop while (and (not (zerop (next-rx-size packet)))
+                     (stream-connected-p stream))
+          do
+             (read-bytes stream packet (next-rx-size packet)))
+    packet))
 
 (defun send-packet (socket stream data &key (wait-response nil))
   ;; Send a binary packet over a TCP stream/socket and receive its response
@@ -597,10 +647,6 @@
               (t (format t "Got packet: ~X~%" parsed)))))))
 
 (defparameter *broker* nil)
-
-(defun stream-connected-p (stream)
-  (and (not (equal (slot-value stream 'listen) :EOF))
-       (not (equal (sb-sys:fd-stream-fd stream) -1))))
 
 (defun broker-connected-p (broker)
   (stream-connected-p (getf broker :stream)))
