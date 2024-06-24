@@ -103,17 +103,17 @@
     (values result i)))
 
 (decode-variable '(#x80 #x01))
- ; => 128, NIL
+; => 128, 2
 (decode-variable '(#xFF #x7F))
- ; => 16383, NIL
+ ; => 16383, 2
 (decode-variable '(#x80 #x80 #x1))
- ; => 16384, NIL
+ ; => 16384, 3
 (decode-variable '(#xFF #xFF #x7F))
- ; => 2097151, NIL
+ ; => 2097151, 3
 (decode-variable '(#x80 #x80 #x80 #x1))
- ; => 2097152, NIL
+ ; => 2097152, 4
 (decode-variable '(#x80 #x80 #x80 #x1 #x2 #x3 #x4))
- ; => 2097152, (2 3 4)
+ ; => 2097152, 4
 
 (defun make-le-range (max)
   (loop for number from 0 to (- max 1) collect number))
