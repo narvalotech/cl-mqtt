@@ -1,7 +1,25 @@
-(ql:quickload "usocket")
-(ql:quickload "bordeaux-threads")
-
+;; get'em debug frames
 (declaim (optimize (debug 3)))
+
+(defpackage :cl-mqtt
+  (:use :common-lisp)
+  (:local-nicknames (#:usocket #:usocket) (#:bt #:bordeaux-threads))
+  (:export
+   ;; functions
+   #:connect-to-broker
+   #:publish
+   #:subscribe
+   #:disconnect
+   #:parse-packet
+   #:parse-packets
+   #:make-packet
+   #:string->ascii
+   #:ascii->string
+   ;; macros
+   #:with-broker
+   ))
+
+(in-package :cl-mqtt)
 
 (defun last-element (vector)
   (elt vector (1- (length vector))))
@@ -38,13 +56,13 @@
     ;; We know the length, attempt to receive the payload.
     (t (missing-bytes (subseq array 1)))))
 
-(next-rx-size #(144))
+;; (next-rx-size #(144))
  ; => 1 (1 bit, #x1, #o1, #b1)
-(next-rx-size #(144 5))
+;; (next-rx-size #(144 5))
  ; => 5 (3 bits, #x5, #o5, #b101)
-(next-rx-size #(144 5 0 77 0 0))
+;; (next-rx-size #(144 5 0 77 0 0))
  ; => 1 (1 bit, #x1, #o1, #b1)
-(next-rx-size #(144 5 0 77 0 0 0))
+;; (next-rx-size #(144 5 0 77 0 0 0))
  ; => 0 (0 bits, #x0, #o0, #b0)
 
 (defun stream-connected-p (stream)
@@ -204,10 +222,10 @@
 (decode-be-uint '(2 1 12))
  ; => 131340 (18 bits, #x2010C)
 
-(defgeneric mqtt-make-packet (opcode &rest params)
+(defgeneric make-packet (opcode &rest params)
   (:documentation "Encode an MQTT packet based on its opcode and a param-list"))
 
-(defmethod mqtt-make-packet :around (opcode &rest params)
+(defmethod make-packet :around (opcode &rest params)
   "Encodes the packet header and length. Returns a valid MQTT packet."
   (declare (ignore params))
   (let ((payload (call-next-method)))
@@ -235,7 +253,7 @@
 (ascii->string '(104 101 108 108 111))
  ; => "hello"
 
-(defmethod mqtt-make-packet ((opcode (eql :connect)) &rest params)
+(defmethod make-packet ((opcode (eql :connect)) &rest params)
   ;; TODO: add setting username/password
   (let ((proto-name '(0 #x4 #x4d #x51 #x54 #x54))
         (proto-version '(5))
@@ -254,10 +272,10 @@
             properties
             payload)))
 
-(mqtt-make-packet :connect :client-id "lispy")
+(make-packet :connect :client-id "lispy")
  ; => (16 18 0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
 
-(defmethod mqtt-make-packet ((opcode (eql :publish)) &rest params)
+(defmethod make-packet ((opcode (eql :publish)) &rest params)
   ;; TODO: utf-8 support
   ;; TODO: support strings in payload
   (let ((topic (string->ascii (getf params :topic)))
@@ -274,7 +292,7 @@
             properties
             payload)))
 
-(mqtt-make-packet :publish :topic "hello/mytopic" :payload '(1 2 3 4))
+(make-packet :publish :topic "hello/mytopic" :payload '(1 2 3 4))
  ; => (48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4)
 
 (defun topic->payload (topic)
@@ -293,7 +311,7 @@
  ; => (0 11 104 101 108 108 111 47 119 111 114 108 100 0 0 7 109 121 116 111 112 105
  ; 99 0)
 
-(defmethod mqtt-make-packet ((opcode (eql :subscribe)) &rest params)
+(defmethod make-packet ((opcode (eql :subscribe)) &rest params)
   (let (;; app has to pass-in the packet identifier
         (packet-id (getf params :packet-id))
         ;; no support for properties yet
@@ -305,18 +323,18 @@
             properties
             (topics->subscribe-payload topics))))
 
-(mqtt-make-packet :subscribe :packet-id 77 :topics '("my/long/topic" "test-topic"))
+(make-packet :subscribe :packet-id 77 :topics '("my/long/topic" "test-topic"))
  ; => (130 32 0 77 0 0 13 109 121 47 108 111 110 103 47 116 111 112 105 99 0 0 10 116
  ; 101 115 116 45 116 111 112 105 99 0)
 
-(defmethod mqtt-make-packet ((opcode (eql :pingreq)) &rest params)
+(defmethod make-packet ((opcode (eql :pingreq)) &rest params)
   (declare (ignore params))
   '())
 
-(mqtt-make-packet :pingreq)
+(make-packet :pingreq)
  ; => (192 0)
 
-(defmethod mqtt-make-packet ((opcode (eql :disconnect)) &rest params)
+(defmethod make-packet ((opcode (eql :disconnect)) &rest params)
   (let ((reason-code (getf params :reason-code))
         ;; no support for properties yet
         (properties nil))
@@ -336,7 +354,7 @@
 ;; #x98 - administrative action
 ;; #x9c - use another server
 ;; #x9d - server moved
-(mqtt-make-packet :disconnect :reason-code #x00)
+(make-packet :disconnect :reason-code #x00)
  ; => (224 2 0 0)
 
 (defun plist-key (plist value)
@@ -362,9 +380,9 @@
 
       payload)))
 
-(mqtt-make-packet :connect :client-id "lispy")
+(make-packet :connect :client-id "lispy")
  ; => (16 18 0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
-(extract-payload (mqtt-make-packet :connect :client-id "lispy"))
+(extract-payload (make-packet :connect :client-id "lispy"))
  ; => (0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
 
 (defgeneric mqtt-decode-packet (opcode payload qos)
@@ -428,23 +446,23 @@
       ;; We don't support QoS for any other packet
       0))
 
-(defun mqtt-parse-packet (packet)
+(defun parse-packet (packet)
   (if (equal (length packet) 0)
-      (return-from mqtt-parse-packet nil))
+      (return-from parse-packet nil))
   (let* ((packet (coerce packet 'list))
          (opcode (decode-opcode packet))
          (qos (decode-qos opcode packet))
          (payload (extract-payload packet)))
     (mqtt-decode-packet opcode payload qos)))
 
-(mqtt-parse-packet '(#xd0 0))
+(parse-packet '(#xd0 0))
  ; => (NIL :PAYLOAD NIL :QOS 0)
 
-(mqtt-parse-packet '(32 9 0 0 6 34 0 10 33 0 20))
+(parse-packet '(32 9 0 0 6 34 0 10 33 0 20))
  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
  ; (6 34 0 10 33 0 20))
 
-(mqtt-parse-packet
+(parse-packet
  '(48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
  ; => (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
  ; (1 2 3 4))
@@ -457,47 +475,47 @@
 (mqtt-next-packet '(32 9 0 0 6 34 0 10 33 0 20 32 9 0 0 6 34 0 10 33 0 20))
  ; => 11 (4 bits, #xB, #o13, #b1011)
 
-(defun mqtt-parse-packets (packets)
+(defun parse-packets (packets)
   "Parse a stream of packets into a list of MQTT packet objects"
   (let ((next (mqtt-next-packet packets)))
     (if (>= (length packets) next)
         (append
-         (list (mqtt-parse-packet (subseq packets 0 next)))
-         (mqtt-parse-packets (subseq packets next)))
+         (list (parse-packet (subseq packets 0 next)))
+         (parse-packets (subseq packets next)))
         nil)))
 
-(mqtt-parse-packets '(32 9 0 0 6 34 0 10 33 0 20))
+(parse-packets '(32 9 0 0 6 34 0 10 33 0 20))
  ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
  ;  (6 34 0 10 33 0 20)))
-(mqtt-parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
+(parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
  ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
  ;  (6 34 0 10 33 0 20))
  ; (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
  ;  (1 2 3 4)))
-(mqtt-parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4 144 5 0 77 0 0 0))
+(parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4 144 5 0 77 0 0 0))
  ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
  ;  (6 34 0 10 33 0 20))
  ; (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
  ;  (1 2 3 4))
  ; (:SUBACK :PAYLOAD (0 77 0 0 0) :QOS 0))
 
-(defmacro mqtt-with-broker-socket ((host port socket stream) &body body)
+(defmacro with-broker-socket ((host port socket stream) &body body)
   "Execute BODY with an open socket to a MQTT broker"
   `(usocket:with-client-socket
        (,socket ,stream ,host ,port :element-type '(unsigned-byte 8))
      (progn ,@body)))
 
-(mqtt-with-broker-socket ("localhost" 1883 socket stream)
-  (send-packet socket stream (mqtt-make-packet :connect :client-id "lispy")
-               :wait-response t))
+;; (with-broker-socket ("localhost" 1883 socket stream)
+;;   (send-packet socket stream (make-packet :connect :client-id "lispy")
+;;                :wait-response t))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => #(32 9 0 0 6 34 0 10 33 0 20)
 
-(mqtt-with-broker-socket ("localhost" 1883 socket stream)
-  (mqtt-parse-packet
-   (send-packet socket stream
-                (mqtt-make-packet :connect :client-id "lispy")
-                :wait-response t)))
+;; (with-broker-socket ("localhost" 1883 socket stream)
+;;   (parse-packet
+;;    (send-packet socket stream
+;;                 (make-packet :connect :client-id "lispy")
+;;                 :wait-response t)))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
 ;  (6 34 0 10 33 0 20))
@@ -506,22 +524,22 @@
   (let ((socket (getf broker :socket))
         (stream (getf broker :stream)))
 
-    (mqtt-parse-packet
+    (parse-packet
      (send-packet socket stream
-                  (mqtt-make-packet :connect :client-id client-id)
+                  (make-packet :connect :client-id client-id)
                   :wait-response t))))
 
 (defun make-broker (socket stream)
   "Makes an MQTT broker (client-side) instance."
   (list :socket socket :stream stream))
 
-(mqtt-with-broker-socket ("localhost" 1883 socket stream)
-  (mqtt-connect (make-broker socket stream) :client-id "new-client"))
+;; (with-broker-socket ("localhost" 1883 socket stream)
+;;   (mqtt-connect (make-broker socket stream) :client-id "new-client"))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
 ;  (6 34 0 10 33 0 20))
 
-(defmacro mqtt-with-broker ((host port broker) &body body)
+(defmacro with-broker ((host port broker) &body body)
   "Execute BODY with an open connection to a MQTT broker"
   `(usocket:with-client-socket
        (socket stream ,host ,port :element-type '(unsigned-byte 8))
@@ -529,29 +547,29 @@
        (mqtt-connect ,broker :client-id "lispy")
        (progn ,@body))))
 
-(mqtt-with-broker-socket ("localhost" 1883 socket stream)
-  ;; Connect
-  (mqtt-parse-packet
-   (send-packet socket stream
-                (mqtt-make-packet :connect :client-id "lispy")
-                :wait-response t))
+;; (with-broker-socket ("localhost" 1883 socket stream)
+;;   ;; Connect
+;;   (parse-packet
+;;    (send-packet socket stream
+;;                 (make-packet :connect :client-id "lispy")
+;;                 :wait-response t))
 
-  ;; Send some dummy data
-  ;; Since QoS is 0, we won't get a response
-  (send-packet socket stream
-               (mqtt-make-packet :publish
-                                 :topic "hello/mytopic"
-                                 :payload (string->ascii "pretend-this-is-json"))))
+;;   ;; Send some dummy data
+;;   ;; Since QoS is 0, we won't get a response
+;;   (send-packet socket stream
+;;                (make-packet :publish
+;;                                  :topic "hello/mytopic"
+;;                                  :payload (string->ascii "pretend-this-is-json"))))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => NIL
 
-(mqtt-with-broker ("localhost" 1883 broker)
-  ;; Send some dummy data
-  ;; Since QoS is 0, we won't get a response
-  (send-packet socket stream
-               (mqtt-make-packet :publish
-                                 :topic "hello/mytopic"
-                                 :payload (string->ascii "pretend-this-is-json"))))
+;; (with-broker ("localhost" 1883 broker)
+;;   ;; Send some dummy data
+;;   ;; Since QoS is 0, we won't get a response
+;;   (send-packet socket stream
+;;                (make-packet :publish
+;;                                  :topic "hello/mytopic"
+;;                                  :payload (string->ascii "pretend-this-is-json"))))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => NIL
 
@@ -569,56 +587,24 @@
     ;; Publish payload
     ;; Since QoS is 0, we won't get a response
     (send-packet socket stream
-                 (mqtt-make-packet :publish
+                 (make-packet :publish
                                    :topic topic
                                    :payload encoded-payload))))
 
-(mqtt-with-broker ("localhost" 1883 broker)
-  (publish broker "hello/mytopic" "pretend-this-is-json"))
+;; (with-broker ("localhost" 1883 broker)
+;;   (publish broker "hello/mytopic" "pretend-this-is-json"))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ;  => NIL
 
-(defmacro with-fn-shadow ((orig new) &body body)
-  `(let ((orig-backup))                 ; TODO: use gensym
-     (if (fboundp ,orig)
-         (progn
-           (setf orig-backup (symbol-function ,orig))
-           (setf (symbol-function ,orig) ,new)
-           (unwind-protect (progn ,@body)
-             (setf (symbol-function ,orig) orig-backup)))
-         (error "Function ~A is not defined" ,orig))))
+;; (with-broker ("localhost" 1883 broker)
+;;   (let ((socket (getf broker :socket))
+;;         (stream (getf broker :stream)))
 
-(defmacro with-var-shadow ((orig new) &body body)
-  `(let ((orig-backup))                 ; TODO: use gensym
-     (if (boundp ,orig)
-         (progn
-           (setf orig-backup (symbol-value ,orig))
-           (setf (symbol-value ,orig) ,new)
-           (unwind-protect (progn ,@body)
-             (setf (symbol-value ,orig) orig-backup)))
-         (error "Variable ~A is not defined" ,orig))))
-
-(defun fake-publish (broker topic payload)
-  (format t "Publishing:~% [broker] ~A~% [topic] ~A~% [payload] ~A~%"
-          broker topic payload))
-
-(with-fn-shadow ('publish #'fake-publish)
-  (publish nil "hello/mytopic" "pretend-this-is-json"))
-; Publishing:
-;  [broker] NIL
-;  [topic] hello/mytopic
-;  [payload] pretend-this-is-json
-;  => NIL
-
-(mqtt-with-broker ("localhost" 1883 broker)
-  (let ((socket (getf broker :socket))
-        (stream (getf broker :stream)))
-
-    (send-packet socket stream
-                 (mqtt-make-packet :subscribe
-                                   :packet-id 77
-                                   :topics '("my/long/topic" "test-topic"))
-                 :wait-response t)))
+;;     (send-packet socket stream
+;;                  (make-packet :subscribe
+;;                                    :packet-id 77
+;;                                    :topics '("my/long/topic" "test-topic"))
+;;                  :wait-response t)))
 ; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
 ; reading..rsp: #(144 5 0 77 0 0 0)
 ;  => #(144 5 0 77 0 0 0)
@@ -630,7 +616,7 @@
 
     ;; Subscribe to payload
     (send-packet socket stream
-                 (mqtt-make-packet :subscribe
+                 (make-packet :subscribe
                                    :packet-id 77
                                    :topics (list topic)))))
 
@@ -640,13 +626,11 @@
 (defun mqtt-process-packet (packet)
   ;; For now, we just parse it to stdout
   (if (> (length packet) 0)
-      (let ((parsed (mqtt-parse-packet packet)))
+      (let ((parsed (parse-packet packet)))
         (if (> (length packet) 0)
             (case (first parsed)
               (:pingrsp nil)
               (t (format t "Got packet: ~X~%" parsed)))))))
-
-(defparameter *broker* nil)
 
 (defun broker-connected-p (broker)
   (stream-connected-p (getf broker :stream)))
@@ -655,14 +639,14 @@
   (let ((socket (getf broker :socket))
         (stream (getf broker :stream)))
 
-    (send-packet socket stream (mqtt-make-packet :pingreq))))
+    (send-packet socket stream (make-packet :pingreq))))
 
 (defun disconnect (broker)
   (let ((socket (getf broker :socket))
         (stream (getf broker :stream)))
 
     (send-packet socket stream
-                 (mqtt-make-packet :disconnect :reason-code #x00))))
+                 (make-packet :disconnect :reason-code #x00))))
 
 (defun ping-thread-entrypoint (broker)
   (loop while (broker-connected-p broker) do
@@ -670,11 +654,11 @@
           (ping broker)
           (sleep 5))))
 
-(defun mqtt-connect-to-broker (address port callback)
+(defun connect-to-broker (address port callback)
   "Open a connection to a broker, and call CALLBACK when data is received."
   (declare (type (function (t t) t) callback))
 
-  (mqtt-with-broker (address port broker)
+  (with-broker (address port broker)
     (let ((socket (getf broker :socket))
           (stream (getf broker :stream))
           (ping-thread))
@@ -693,9 +677,11 @@
       (bt:join-thread ping-thread))
     (format t "Exited receive loop.~%")))
 
-(defun test-app-callback (broker data)
-  (setf *broker* broker)
-  (mqtt-process-packet data))
+;; (defparameter *broker* nil)
+
+;; (defun test-app-callback (broker data)
+;;   (setf *broker* broker)
+;;   (mqtt-process-packet data))
 
 ;; (mqtt-connect-to-broker "localhost" 1883 #'test-app-callback)
 ;; (subscribe *broker* "#")
