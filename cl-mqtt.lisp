@@ -103,7 +103,7 @@
     (if wait-response
         (read-from-socket socket stream))))
 
-(defconstant +mqtt-opcodes+
+(defparameter +mqtt-opcodes+
   '(:connect 1
     :connect-ack 2
     :publish 3
