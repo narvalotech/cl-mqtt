@@ -482,15 +482,6 @@
 ;; TODO:
 ;; - Try to match outstanding packets (maybe with queue?)
 
-(defun mqtt-process-packet (packet)
-  ;; For now, we just parse it to stdout
-  (if (> (length packet) 0)
-      (let ((parsed (parse-packet packet)))
-        (if (> (length packet) 0)
-            (case (first parsed)
-              (:pingrsp nil)
-              (t (format t "Got packet: ~X~%" parsed)))))))
-
 (defun broker-connected-p (broker)
   (stream-connected-p (getf broker :stream)))
 
@@ -536,13 +527,24 @@
       (bt:join-thread ping-thread))
     (format t "Exited receive loop.~%")))
 
+;; Example usage
+;;
+;; (defun decode-and-print-packet (packet)
+;;   ;; For now, we just parse it to stdout
+;;   (if (> (length packet) 0)
+;;       (let ((parsed (parse-packet packet)))
+;;         (if (> (length packet) 0)
+;;             (case (first parsed)
+;;               (:pingrsp nil)
+;;               (t (format t "Got packet: ~X~%" parsed)))))))
+
 ;; (defparameter *broker* nil)
 
 ;; (defun test-app-callback (broker data)
 ;;   (setf *broker* broker)
-;;   (mqtt-process-packet data))
+;;   (decode-and-print-packet data))
 
-;; (mqtt-connect-to-broker "localhost" 1883 #'test-app-callback)
+;; (connect-to-broker "localhost" 1883 #'test-app-callback)
 ;; (subscribe *broker* "#")
 ;; (publish *broker* "test/topic" "important data")
 ;; (disconnect *broker*)

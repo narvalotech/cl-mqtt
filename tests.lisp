@@ -129,3 +129,7 @@
                (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD (1 2 3 4))
                (:SUBACK :PAYLOAD (0 77 0 0 0) :QOS 0))
              (parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4 144 5 0 77 0 0 0)))))
+
+;; TODO: also move mosquitto-based integration tests
+;; Debatable as it depends on `mosquitto' being installed locally.
+;; Maybe it's just better to provide a nice readme..
