@@ -24,16 +24,12 @@
 (defun last-element (vector)
   (elt vector (1- (length vector))))
 
-(last-element #(0 1 2 3))
+;; (last-element #(0 1 2 3))
+;;  ; => 3 (2 bits, #x3, #o3, #b11)
 
 (defun packet-length-incomplete? (array)
   "Returns T when not enough bytes to decode packet length."
   (logbitp 7 (last-element array)))
-
-(packet-length-incomplete? #(#x80))
- ; => T
-(packet-length-incomplete? #(#x80 #x80 #x01))
- ; => NIL
 
 (defun missing-bytes (array)
   "Returns the number of bytes array is missing to make a valid MQTT packet."
@@ -55,15 +51,6 @@
 
     ;; We know the length, attempt to receive the payload.
     (t (missing-bytes (subseq array 1)))))
-
-;; (next-rx-size #(144))
- ; => 1 (1 bit, #x1, #o1, #b1)
-;; (next-rx-size #(144 5))
- ; => 5 (3 bits, #x5, #o5, #b101)
-;; (next-rx-size #(144 5 0 77 0 0))
- ; => 1 (1 bit, #x1, #o1, #b1)
-;; (next-rx-size #(144 5 0 77 0 0 0))
- ; => 0 (0 bits, #x0, #o0, #b0)
 
 (defun stream-connected-p (stream)
   (and (not (equal (slot-value stream 'listen) :EOF))
@@ -121,8 +108,8 @@
        (:subscribe (logior (ash id 4) #b0010))
        (t (ash id 4))))))
 
-(mqtt-make-header-flags :connect)
- ; => (16)
+;; (mqtt-make-header-flags :connect)
+;;  ; => (16)
 
 (defun encode-variable (int)
   "Encodes an integer into the MQTT variable-intgth format"
@@ -138,27 +125,6 @@
            new))
    (list int)))
 
-(format nil "~X" (encode-variable 128))
- ; => "(80 1)"
-(format nil "~X" (encode-variable 16383))
- ; => "(FF 7F)"
-(format nil "~X" (encode-variable 16384))
- ; => "(80 80 1)"
-(format nil "~X" (encode-variable 2097151))
- ; => "(FF FF 7F)"
-(format nil "~X" (encode-variable 2097152))
- ; => "(80 80 80 1)"
-;; (format nil "~X" (encode-variable 268435456))
-; -> should error out
-
-(defun cont-bit (byte)
-  (equal #x80 (logand #x80 byte)))
-
-(cont-bit #x83)
- ; => T
-(cont-bit #x7f)
- ; => NIL
-
 (defun decode-variable (varint)
   "Decodes a variable-length integer (sequence of bytes) into a lisp integer"
   (let ((i 0)
@@ -170,42 +136,11 @@
           until (not (logbitp 7 byte)))
     (values result i)))
 
-(decode-variable '(#x80 #x01))
-; => 128, 2
-(decode-variable '(#xFF #x7F))
- ; => 16383, 2
-(decode-variable '(#x80 #x80 #x1))
- ; => 16384, 3
-(decode-variable '(#xFF #xFF #x7F))
- ; => 2097151, 3
-(decode-variable '(#x80 #x80 #x80 #x1))
- ; => 2097152, 4
-(decode-variable '(#x80 #x80 #x80 #x1 #x2 #x3 #x4))
- ; => 2097152, 4
-
-(defun make-le-range (max)
-  (loop for number from 0 to (- max 1) collect number))
-
-(make-le-range 2)
- ; => (0 1)
-
 (defun make-be-range (max)
   (loop for number downfrom (1- max) to 0 collect number))
 
-(make-be-range 2)
- ; => (1 0)
-
 (defun extract-byte (number index)
   (ldb (byte 8 (* index 8)) number))
-
-(extract-byte #x7f88 1)
- ; => 127 (7 bits, #x7F, #o177, #b1111111)
-(extract-byte #x7f88 0)
- ; => 136 (8 bits, #x88, #o210, #b10001000)
-
-(defun make-uint (octets number)
-  (loop for pos in (make-le-range octets)
-        collect (extract-byte number pos)))
 
 (defun make-be-uint (octets number)
   (loop for pos in (make-be-range octets)
@@ -216,11 +151,6 @@
         for byte in (reverse bytes)
         summing
         (ash byte (* i 8))))
-
-(decode-be-uint '(1 12))
- ; => 268 (9 bits, #x10C)
-(decode-be-uint '(2 1 12))
- ; => 131340 (18 bits, #x2010C)
 
 (defgeneric make-packet (opcode &rest params)
   (:documentation "Encode an MQTT packet based on its opcode and a param-list"))
@@ -242,16 +172,10 @@
 (defun string->ascii (input-string)
   (map 'list #'char-code input-string))
 
-(string->ascii "hello")
- ; => (104 101 108 108 111)
-
 (defun ascii->string (ascii)
   (coerce
    (loop for char in ascii
          collect (code-char char)) 'string))
-
-(ascii->string '(104 101 108 108 111))
- ; => "hello"
 
 (defmethod make-packet ((opcode (eql :connect)) &rest params)
   ;; TODO: add setting username/password
@@ -272,9 +196,6 @@
             properties
             payload)))
 
-(make-packet :connect :client-id "lispy")
- ; => (16 18 0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
-
 (defmethod make-packet ((opcode (eql :publish)) &rest params)
   ;; TODO: utf-8 support
   ;; TODO: support strings in payload
@@ -292,9 +213,6 @@
             properties
             payload)))
 
-(make-packet :publish :topic "hello/mytopic" :payload '(1 2 3 4))
- ; => (48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4)
-
 (defun topic->payload (topic)
   "Only intended for use with topics->subscribe-payload"
   (let ((payload (string->ascii topic)))
@@ -307,7 +225,7 @@
   (reduce #'append
           (map 'list #'topic->payload topics)))
 
-(topics->subscribe-payload '("hello/world" "mytopic"))
+;; (topics->subscribe-payload '("hello/world" "mytopic"))
  ; => (0 11 104 101 108 108 111 47 119 111 114 108 100 0 0 7 109 121 116 111 112 105
  ; 99 0)
 
@@ -323,16 +241,9 @@
             properties
             (topics->subscribe-payload topics))))
 
-(make-packet :subscribe :packet-id 77 :topics '("my/long/topic" "test-topic"))
- ; => (130 32 0 77 0 0 13 109 121 47 108 111 110 103 47 116 111 112 105 99 0 0 10 116
- ; 101 115 116 45 116 111 112 105 99 0)
-
 (defmethod make-packet ((opcode (eql :pingreq)) &rest params)
   (declare (ignore params))
   '())
-
-(make-packet :pingreq)
- ; => (192 0)
 
 (defmethod make-packet ((opcode (eql :disconnect)) &rest params)
   (let ((reason-code (getf params :reason-code))
@@ -354,8 +265,6 @@
 ;; #x98 - administrative action
 ;; #x9c - use another server
 ;; #x9d - server moved
-(make-packet :disconnect :reason-code #x00)
- ; => (224 2 0 0)
 
 (defun plist-key (plist value)
   (loop for (key val) on plist by #'cddr
@@ -364,11 +273,6 @@
 
 (defun decode-opcode (packet)
   (plist-key +mqtt-opcodes+ (ash (first packet) -4)))
-
-(decode-opcode (mqtt-make-header-flags :connect))
- ; => :CONNECT
-(decode-opcode (mqtt-make-header-flags :connect-ack))
- ; => :CONNECT-ACK
 
 (defun extract-payload (packet)
   (multiple-value-bind (len offset)
@@ -379,11 +283,6 @@
           (error "invalid length"))
 
       payload)))
-
-(make-packet :connect :client-id "lispy")
- ; => (16 18 0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
-(extract-payload (make-packet :connect :client-id "lispy"))
- ; => (0 4 77 81 84 84 5 2 0 5 0 0 5 108 105 115 112 121)
 
 (defgeneric mqtt-decode-packet (opcode payload qos)
   (:documentation "De-serialize an MQTT packet into a MQTT packet object"))
@@ -435,9 +334,6 @@
     (list opcode
           :reason-code reason-code)))
 
-(mqtt-decode-packet :disconnect '(#x04 00) 0)
- ; => (:DISCONNECT :REASON-CODE 4)
-
 (defun decode-qos (opcode packet)
   "Returns QoS level of packet"
   ;; TODO: properly support retransmission
@@ -455,25 +351,11 @@
          (payload (extract-payload packet)))
     (mqtt-decode-packet opcode payload qos)))
 
-(parse-packet '(#xd0 0))
- ; => (NIL :PAYLOAD NIL :QOS 0)
-
-(parse-packet '(32 9 0 0 6 34 0 10 33 0 20))
- ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
- ; (6 34 0 10 33 0 20))
-
-(parse-packet
- '(48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
- ; => (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
- ; (1 2 3 4))
-
 (defun mqtt-next-packet (packets)
+  "Gives the offset with the start of the next MQTT packet"
   (multiple-value-bind (len offset)
       (decode-variable (cdr packets))
     (+ 1 len offset)))
-
-(mqtt-next-packet '(32 9 0 0 6 34 0 10 33 0 20 32 9 0 0 6 34 0 10 33 0 20))
- ; => 11 (4 bits, #xB, #o13, #b1011)
 
 (defun parse-packets (packets)
   "Parse a stream of packets into a list of MQTT packet objects"
@@ -483,21 +365,6 @@
          (list (parse-packet (subseq packets 0 next)))
          (parse-packets (subseq packets next)))
         nil)))
-
-(parse-packets '(32 9 0 0 6 34 0 10 33 0 20))
- ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
- ;  (6 34 0 10 33 0 20)))
-(parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4))
- ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
- ;  (6 34 0 10 33 0 20))
- ; (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
- ;  (1 2 3 4)))
-(parse-packets '(32 9 0 0 6 34 0 10 33 0 20 48 20 0 13 104 101 108 108 111 47 109 121 116 111 112 105 99 0 1 2 3 4 144 5 0 77 0 0 0))
- ; => ((:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
- ;  (6 34 0 10 33 0 20))
- ; (:PUBLISH :TOPIC "hello/mytopic" :PACKET-ID NIL :PROPERTIES NIL :PAYLOAD
- ;  (1 2 3 4))
- ; (:SUBACK :PAYLOAD (0 77 0 0 0) :QOS 0))
 
 (defmacro with-broker-socket ((host port socket stream) &body body)
   "Execute BODY with an open socket to a MQTT broker"
