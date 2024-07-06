@@ -375,17 +375,15 @@
 ;; (with-broker-socket ("localhost" 1883 socket stream)
 ;;   (send-packet socket stream (make-packet :connect :client-id "lispy")
 ;;                :wait-response t))
-; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
-;  => #(32 9 0 0 6 34 0 10 33 0 20)
+;;  ; => #(32 9 0 0 6 34 0 10 33 0 20)
 
 ;; (with-broker-socket ("localhost" 1883 socket stream)
 ;;   (parse-packet
 ;;    (send-packet socket stream
 ;;                 (make-packet :connect :client-id "lispy")
 ;;                 :wait-response t)))
-; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
-;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
-;  (6 34 0 10 33 0 20))
+;;  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
+;;  ; (6 34 0 10 33 0 20))
 
 (defun mqtt-connect (broker &key (client-id "cl-mqtt-client"))
   (let ((socket (getf broker :socket))
@@ -402,9 +400,8 @@
 
 ;; (with-broker-socket ("localhost" 1883 socket stream)
 ;;   (mqtt-connect (make-broker socket stream) :client-id "new-client"))
-; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
-;  => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
-;  (6 34 0 10 33 0 20))
+;;  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
+;;  ; (6 34 0 10 33 0 20))
 
 (defmacro with-broker ((host port broker) &body body)
   "Execute BODY with an open connection to a MQTT broker"
@@ -427,8 +424,7 @@
 ;;                (make-packet :publish
 ;;                                  :topic "hello/mytopic"
 ;;                                  :payload (string->ascii "pretend-this-is-json"))))
-; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
-;  => NIL
+;;  ; => NIL
 
 ;; (with-broker ("localhost" 1883 broker)
 ;;   ;; Send some dummy data
@@ -437,8 +433,7 @@
 ;;                (make-packet :publish
 ;;                                  :topic "hello/mytopic"
 ;;                                  :payload (string->ascii "pretend-this-is-json"))))
-; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
-;  => NIL
+;;  ; => NIL
 
 (defun publish (broker topic payload)
   "Publish PAYLOAD to TOPIC with QoS 0 (no response)"
@@ -460,8 +455,7 @@
 
 ;; (with-broker ("localhost" 1883 broker)
 ;;   (publish broker "hello/mytopic" "pretend-this-is-json"))
-; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
-;  => NIL
+;;  ; => NIL
 
 ;; (with-broker ("localhost" 1883 broker)
 ;;   (let ((socket (getf broker :socket))
@@ -472,9 +466,7 @@
 ;;                                    :packet-id 77
 ;;                                    :topics '("my/long/topic" "test-topic"))
 ;;                  :wait-response t)))
-; reading..rsp: #(32 9 0 0 6 34 0 10 33 0 20)
-; reading..rsp: #(144 5 0 77 0 0 0)
-;  => #(144 5 0 77 0 0 0)
+;;  ; => #(144 5 0 77 0 0 0)
 
 (defun subscribe (broker topic)
   "Subscribe to TOPIC with QoS 0"
