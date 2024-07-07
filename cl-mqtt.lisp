@@ -403,13 +403,17 @@
 ;;  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
 ;;  ; (6 34 0 10 33 0 20))
 
-(defmacro with-broker ((host port broker) &body body)
-  "Execute BODY with an open connection to a MQTT broker"
-  `(usocket:with-client-socket
-       (socket stream ,host ,port :element-type '(unsigned-byte 8))
-     (let ((,broker (make-broker socket stream)))
-       (mqtt-connect ,broker :client-id "lispy")
-       (progn ,@body))))
+(defmacro with-broker ((host port broker &rest args) &body body)
+  "Execute BODY with an open connection to a MQTT broker.
+Specify the client name with the :client-id-str keyword param."
+  (let* ((arg-pairs (loop for i from 0 below (length args) by 2
+                          collect (cons (nth i args) (nth (1+ i) args))))
+         (client-id-str (or (cdr (assoc :client-id-str arg-pairs)) "lispy")))
+    `(usocket:with-client-socket
+          (socket stream ,host ,port :element-type '(unsigned-byte 8))
+        (let ((,broker (make-broker socket stream)))
+          (mqtt-connect ,broker :client-id ,client-id-str)
+          (progn ,@body)))))
 
 ;; (with-broker-socket ("localhost" 1883 socket stream)
 ;;   ;; Connect
