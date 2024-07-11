@@ -3,6 +3,7 @@
 
 (defpackage :cl-mqtt
   (:use :common-lisp)
+  (:nicknames :MQTT)
   (:local-nicknames (#:usocket #:usocket) (#:bt #:bordeaux-threads))
   (:export
    ;; functions
