@@ -8,6 +8,7 @@
   (:export
    ;; functions
    #:connect-to-broker
+   #:publish-with-response
    #:publish
    #:subscribe
    #:disconnect
@@ -502,6 +503,24 @@ Specify the client name with the :client-id-str keyword param."
 
     (send-packet socket stream
                  (make-packet :disconnect :reason-code #x00))))
+
+(defun publish-with-response (broker topic value resp-topic resp-filter)
+  "Publish to a topic and wait for a response. This function will return the
+payload of the packet for which `resp-filter' returns true"
+
+  (let ((socket (getf broker :socket))
+        (stream (getf broker :stream)))
+
+    (subscribe broker resp-topic)
+    (publish broker topic value)
+
+    (loop while (broker-connected-p broker) do
+      (let ((data (read-from-socket socket stream)))
+        (when (> (length data) 0)
+          (loop for packet in (parse-packets (coerce data 'list))
+                do (when (funcall resp-filter packet)
+                     (return-from publish-with-response
+                       (getf (cdr packet) :payload)))))))))
 
 (defun ping-thread-entrypoint (broker)
   (loop while (broker-connected-p broker) do
