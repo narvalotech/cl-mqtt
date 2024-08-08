@@ -528,11 +528,11 @@ payload of the packet for which `resp-filter' returns true"
           (ping broker)
           (sleep 5))))
 
-(defun connect-to-broker (address port callback)
+(defun connect-to-broker (address port callback &key (client-id-str nil))
   "Open a connection to a broker, and call CALLBACK when data is received."
   (declare (type (function (t t) t) callback))
 
-  (with-broker (address port broker)
+  (with-broker (address port broker :client-id-str client-id-str)
     (let ((socket (getf broker :socket))
           (stream (getf broker :stream))
           (ping-thread))
