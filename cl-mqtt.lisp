@@ -54,10 +54,6 @@
     ;; We know the length, attempt to receive the payload.
     (t (missing-bytes (subseq array 1)))))
 
-(defun stream-connected-p (stream)
-  (and (not (equal (slot-value stream 'listen) :EOF))
-       (not (equal (sb-sys:fd-stream-fd stream) -1))))
-
 (defun read-bytes (stream packet num-bytes)
   "Phind made this (with some nudging)"
   (let ((temp-buffer (make-array num-bytes :element-type '(unsigned-byte 8))))
@@ -74,23 +70,25 @@
                             :element-type '(unsigned-byte 8))))
 
     (loop while (and (not (zerop (next-rx-size packet)))
-                     (stream-connected-p stream))
+                     (socket-connected-p socket))
           do
              (read-bytes stream packet (next-rx-size packet)))
     packet))
 
-(defun send-packet (socket stream data &key (wait-response nil))
-  ;; Send a binary packet over a TCP stream/socket and receive its response
+(defun send-packet-no-rsp (stream data)
   (let ((bytes (make-array (length data)
                            :element-type '(unsigned-byte 8)
                            :initial-contents data)))
 
     ;; Send the command
     (write-sequence bytes stream)
-    (finish-output stream)
+    (finish-output stream)))
 
-    (if wait-response
-        (read-from-socket socket stream))))
+(defun send-packet (socket stream data &key (wait-response nil))
+  ;; Send a binary packet over a TCP stream/socket and receive its response
+  (send-packet-no-rsp stream data)
+  (if wait-response
+      (read-from-socket socket stream)))
 
 (defparameter +mqtt-opcodes+
   '(:connect 1
@@ -387,7 +385,7 @@
 ;;  ; => (:CONNECT-ACK :SESSION-PRESENT NIL :REASON-CODE 0 :PROPERTIES
 ;;  ; (6 34 0 10 33 0 20))
 
-(defun mqtt-connect (broker &key (client-id "cl-mqtt-client"))
+(defun mqtt-connect (broker &key (client-id "cl-mqtt-client-ccl"))
   (let ((socket (getf broker :socket))
         (stream (getf broker :stream)))
 
@@ -488,14 +486,15 @@ Specify the client name with the :client-id-str keyword param."
 ;; TODO:
 ;; - Try to match outstanding packets (maybe with queue?)
 
-(defun broker-connected-p (broker)
-  (stream-connected-p (getf broker :stream)))
-
 (defun ping (broker)
-  (let ((socket (getf broker :socket))
-        (stream (getf broker :stream)))
+  (send-packet-no-rsp (getf broker :stream)
+                      (make-packet :pingreq)))
 
-    (send-packet socket stream (make-packet :pingreq))))
+(defun socket-connected-p (socket)
+  (usocket:wait-for-input socket :timeout .2))
+
+(defun broker-connected-p (broker)
+  (socket-connected-p (getf broker :socket)))
 
 (defun disconnect (broker)
   (let ((socket (getf broker :socket))
@@ -514,13 +513,14 @@ payload of the packet for which `resp-filter' returns true"
     (subscribe broker resp-topic)
     (publish broker topic value)
 
-    (loop while (broker-connected-p broker) do
-      (let ((data (read-from-socket socket stream)))
-        (when (> (length data) 0)
-          (loop for packet in (parse-packets (coerce data 'list))
-                do (when (funcall resp-filter packet)
-                     (return-from publish-with-response
-                       (getf (cdr packet) :payload)))))))))
+    (bt:with-timeout (4)
+      (loop while (broker-connected-p broker) do
+        (let ((data (read-from-socket socket stream)))
+          (when (> (length data) 0)
+            (loop for packet in (parse-packets (coerce data 'list))
+                  do (when (funcall resp-filter packet)
+                       (return-from publish-with-response
+                         (getf (cdr packet) :payload))))))))))
 
 (defun ping-thread-entrypoint (broker)
   (loop while (broker-connected-p broker) do
